@@ -1,9 +1,4 @@
----
-title: "Datathon-chloride"
-author: "R Samanta"
-date: "9/8/2018"
-output: html_document
----
+```{r}
 #install.packages('DBI')
 #install.packages("dplyr")
 #install.packages("dbplyr")
@@ -27,7 +22,10 @@ tbl_list
 
 ```{r}
 
-
+lab_vals <- dplyr::tbl(con, "lab") %>% 
+  dplyr::select(labname) %>%
+  group_by(labname) %>% 
+  summarise(n=n()) %>% collect()
 
 chloride <- dplyr::tbl(con, "lab") %>% 
   dplyr::select(patientunitstayid, labresultrevisedoffset, labname, labresult) %>% filter(labname == 'chloride'
@@ -55,13 +53,13 @@ quantile(chloride$labresult, probs = c(0.0005, 1-0.0005))
 install.packages('stringr')
 library(stringr)
 base_xs <- dplyr::tbl(con, "lab") %>% 
-  dplyr::select(patientunitstayid, labresultrevisedoffset, labresult)%>% filter(labname == 'Base Excess') %>% collect()
+  dplyr::select(patientunitstayid, labresultrevisedoffset, labname, labresult)%>% filter(labname == 'Base Excess') %>% collect()
 
 base_xs <- filter(base_xs, !is.na(labresult))  %>% 
   rename(time = labresultrevisedoffset) 
 
 base_def <- dplyr::tbl(con, "lab") %>% 
-  dplyr::select(patientunitstayid, labresultrevisedoffset, labresult)%>% filter(labname == 'Base Deficit') %>% collect()
+  dplyr::select(patientunitstayid, labresultrevisedoffset, labname, labresult)%>% filter(labname == 'Base Deficit') %>% collect()
 
 base_def <- filter(base_def, !is.na(labresult)) %>% 
  rename(time = labresultrevisedoffset) %>% 
@@ -77,4 +75,130 @@ quantile(base_xs$labresult, probs = c(0.005, 1-0.005))
 #  0.5% 99.5% 
 # -22.8  20.0 
 
+bicarb <- 
+  dplyr::tbl(con, "lab") %>% 
+  dplyr::select(patientunitstayid, labresultrevisedoffset, labname, labresult)%>% filter(labname == 'bicarbonate') %>% dplyr::select(-labname) %>% collect() 
 
+bicarb <- filter(bicarb, !is.na(labresult))
+
+hco3 <- 
+  dplyr::tbl(con, "lab") %>% 
+  dplyr::select(patientunitstayid, labresultrevisedoffset, labname, labresult)%>% filter(labname == 'HCO3') %>% dplyr::select(-labname) %>% collect() 
+
+hco3 <- filter(hco3, !is.na(labresult))
+
+bicarb <- bind_rows(bicarb, hco3)
+quantile(bicarb$labresult, probs = c(0.005, 0.995))
+
+#0.5% 99.5% 
+#8.9  44.0 
+
+# pH
+
+lab_vals %>% filter(str_detect(labname, regex('ph', ignore_case = T)))
+# only one lab term for pH
+
+ph <- 
+  dplyr::tbl(con, "lab") %>% 
+  dplyr::select(patientunitstayid, labresultrevisedoffset, labname, labresult)%>% filter(labname == 'pH') %>% dplyr::select(-labname) %>% collect() 
+
+ph <- filter(ph, !is.na(labresult))
+quantile(ph$labresult, probs = c(0.005, 0.995))
+
+# 0.5% 99.5% 
+# 6.96  7.59 
+```
+
+
+|             | Lower Filter Limit | Upper Filter Limit |   |
+|-------------|--------------------|--------------------|---|
+| Chloride    |         71         |         137        |   |
+| Base Excess |        -22.8       |         20         |   |
+| Bicarbonate |         8.9        |        44.0        |   |
+| pH          |        6.96        |        7.59        |   |
+
+
+
+
+```{r}
+dead_status <- dplyr::tbl(con, "apachepredvar") %>% 
+  dplyr::select(patientunitstayid, diedinhospital) %>% collect()
+  
+start_chloride <- group_by(chloride, patientunitstayid) %>% filter(time > 0) %>% filter (time < 86401) %>% summarise(max(labresult)) %>% rename(labresult =`max(labresult)` ) 
+
+start_chloride <- start_chloride %>% left_join(dead_status, by = 'patientunitstayid') %>% filter (!is.na(diedinhospital))
+
+start_chloride <- mutate(start_chloride, diedinhospital = factor(diedinhospital))
+```
+
+Let's fit a logistic regression to the crude 24 hour chloride values:
+```{r}
+mod <- glm (diedinhospital ~ labresult, family=binomial(link='logit'), data = start_chloride)
+
+install.packages("pROC")
+library(pROC)
+roc(start_chloride$diedinhospital, start_chloride$labresult) %>% plot
+
+```
+
+AUC = 0.5624
+
+```{r}
+ggplot(start_chloride, aes(y = labresult, x = diedinhospital, colour = diedinhospital)) + geom_boxplot()+ scale_y_continuous(limits = c(85, 135)) +
+  labs(x = 'Died', y='Chloride (mmol/L)')+theme_bw() + theme(legend.position = 'none') + scale_colour_manual(values = c('orange2', 'blue2'))
+
+```
+
+![img](https://github.com/EmmaRocheteau/datathon/blob/master/img/box_plot_death.png)
+
+```{r}
+# set a new level as > 110
+
+low_rows <- filter(start_chloride, labresult < 96) %>% dplyr::select(patientunitstayid) %>% mutate(cat = 1)
+
+normal_rows <-filter(start_chloride, labresult >= 96) %>% filter(labresult <= 106) %>%  dplyr::select(patientunitstayid) %>% mutate(cat = 0)
+
+high_rows <- filter(start_chloride, labresult > 106) %>% 
+  filter(labresult <= 112) %>% dplyr::select(patientunitstayid) %>% mutate(cat = 2)
+
+super_high_rows <- filter(start_chloride, labresult > 112) %>% dplyr::select(patientunitstayid) %>% mutate(cat = 3)
+
+new_cat <- bind_rows(low_rows, normal_rows, high_rows, super_high_rows) %>% 
+  mutate(cat = as.factor(cat))
+
+new_cat
+
+start_chloride <- left_join(start_chloride, new_cat,  by = 'patientunitstayid')
+
+#mod_2 <- glm (diedinhospital ~ cat, family=binomial(link='logit'), data = start_chloride)
+
+mod_3 <- glm (diedinhospital ~ cat, family=binomial(link='logit'), data = start_chloride)
+
+#start_chloride <- select(start_chloride, -cat)
+```
+
+
+```{r}
+start_chloride <- mutate(start_chloride, cat = as.numeric(cat))
+roc(start_chloride$diedinhospital, start_chloride$cat)
+```
+
+![img](https://github.com/EmmaRocheteau/datathon/blob/master/img/roc_2.png)
+AUC=0.57
+
+```{r}
+a <- filter(start_chloride, diedinhospital == 0)
+b <- filter(start_chloride, diedinhospital == 1)
+t.test(a$labresult, b$labresult, paired = FALSE)
+```
+
+	Welch Two Sample t-test
+
+data:  `a$labresult` and `b$labresult`
+t = -22.767, df = 15430, **p-value < 2.2e-16**
+alternative hypothesis: true difference in means is not equal to 0
+95 percent confidence interval:
+ -1.861412 -1.566303
+sample estimates:
+mean of x mean of y 
+ 107.1369  108.8507 
