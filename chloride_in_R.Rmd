@@ -1,0 +1,80 @@
+---
+title: "Datathon-chloride"
+author: "R Samanta"
+date: "9/8/2018"
+output: html_document
+---
+#install.packages('DBI')
+#install.packages("dplyr")
+#install.packages("dbplyr")
+library(DBI)
+library(dplyr)
+library(dbplyr)
+
+con <- dbConnect(
+  bigrquery::bigquery(),
+  project = "physionet-data",
+  dataset = "eicu_crd",
+  billing = "london-datathon"
+)
+con 
+
+tbl_list <- dbListTables(con)
+tbl_list
+#dplyr::tbl(con, "allergy") %>% collect()
+
+```
+
+```{r}
+
+
+
+chloride <- dplyr::tbl(con, "lab") %>% 
+  dplyr::select(patientunitstayid, labresultrevisedoffset, labname, labresult) %>% filter(labname == 'chloride'
+  ) %>% filter(!is.na(labresult) %>% collect() %>% rename(time = labresultrevisedoffset) 
+  
+  
+t2 <- ggplot(chloride, aes(x = labresult)) 
+t2 + stat_ecdf()
+
+# we have 350 values , some of which are junk , to get the 99.5% quantiles do
+
+quantile(chloride$labresult, probs = c(0.0005, 1-0.0005))
+# which gives => 
+# 0.05% 99.95% 
+#    71    137 
+
+# clean the 
+# - BE / 
+# Hco3
+# pH
+
+
+# 
+
+install.packages('stringr')
+library(stringr)
+base_xs <- dplyr::tbl(con, "lab") %>% 
+  dplyr::select(patientunitstayid, labresultrevisedoffset, labresult)%>% filter(labname == 'Base Excess') %>% collect()
+
+base_xs <- filter(base_xs, !is.na(labresult))  %>% 
+  rename(time = labresultrevisedoffset) 
+
+base_def <- dplyr::tbl(con, "lab") %>% 
+  dplyr::select(patientunitstayid, labresultrevisedoffset, labresult)%>% filter(labname == 'Base Deficit') %>% collect()
+
+base_def <- filter(base_def, !is.na(labresult)) %>% 
+ rename(time = labresultrevisedoffset) %>% 
+  mutate(labresult = case_when(
+    labresult <= 0 ~ labresult,
+    labresult > 0 ~ -labresult,
+    FALSE ~ NA_real_
+  ))
+  
+base_xs <- bind_rows(base_xs,base_def)
+
+quantile(base_xs$labresult, probs = c(0.005, 1-0.005))
+#  0.5% 99.5% 
+# -22.8  20.0 
+
+
