@@ -1,4 +1,4 @@
-patient_id ,apache,chloride,ph,bun,bicarbonate,base_excess,change_creatinine,sepsis,trauma,abdom_surg,admit_diaagnosis,los_icu,rrt,death
+patient_id,apache,chloride,ph,bun,bicarbonate,base_excess,change_creatinine,sepsis,trauma,abdom_surg,admit_diagnosis,los_icu,rrt,death
 102304,68,90,7.4,3,24.5,4,13,1,0,0,Sepsis,5.9,1,0
 163350,44,86,7.5,3.8,20.7,-2.3,36,0,1,1,CHF,4.8,0,1
 121509,55,105,6.1,2.5,34.5,2.7,14,0,1,1,COPD,18.8,0,0
