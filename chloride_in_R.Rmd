@@ -116,3 +116,69 @@ quantile(ph$labresult, probs = c(0.005, 0.995))
 | Base Excess |        -22.8       |         20         |   |
 | Bicarbonate |         8.9        |        44.0        |   |
 | pH          |        6.96        |        7.59        |   |
+
+
+
+
+```{r}
+dead_status <- dplyr::tbl(con, "apachepredvar") %>% 
+  dplyr::select(patientunitstayid, diedinhospital) %>% collect()
+  
+start_chloride <- group_by(chloride, patientunitstayid) %>% filter(time > 0) %>% filter (time < 86401) %>% summarise(max(labresult)) %>% rename(labresult =`max(labresult)` ) 
+
+start_chloride <- start_chloride %>% left_join(dead_status, by = 'patientunitstayid') %>% filter (!is.na(diedinhospital))
+
+start_chloride <- mutate(start_chloride, diedinhospital = factor(diedinhospital))
+```
+
+Let's fit a logistic regression to the crude 24 hour chloride values:
+```{r}
+mod <- glm (diedinhospital ~ labresult, family=binomial(link='logit'), data = start_chloride)
+
+install.packages("pROC")
+library(pROC)
+roc(start_chloride$diedinhospital, start_chloride$labresult) %>% plot
+
+```
+
+AUC = 0.5624
+
+```{r}
+ggplot(start_chloride, aes(y = labresult, x = diedinhospital, colour = diedinhospital)) + geom_boxplot()+ scale_y_continuous(limits = c(85, 135)) +
+  labs(x = 'Died', y='Chloride (mmol/L)')+theme_bw() + theme(legend.position = 'none') + scale_colour_manual(values = c('orange2', 'blue2'))
+
+```
+
+
+
+```{r}
+# set a new level as > 110
+
+low_rows <- filter(start_chloride, labresult < 96) %>% dplyr::select(patientunitstayid) %>% mutate(cat = 1)
+
+normal_rows <-filter(start_chloride, labresult >= 96) %>% filter(labresult <= 106) %>%  dplyr::select(patientunitstayid) %>% mutate(cat = 0)
+
+high_rows <- filter(start_chloride, labresult > 106) %>% 
+  filter(labresult <= 112) %>% dplyr::select(patientunitstayid) %>% mutate(cat = 2)
+
+super_high_rows <- filter(start_chloride, labresult > 112) %>% dplyr::select(patientunitstayid) %>% mutate(cat = 3)
+
+new_cat <- bind_rows(low_rows, normal_rows, high_rows, super_high_rows) %>% 
+  mutate(cat = as.factor(cat))
+
+new_cat
+
+start_chloride <- left_join(start_chloride, new_cat,  by = 'patientunitstayid')
+
+#mod_2 <- glm (diedinhospital ~ cat, family=binomial(link='logit'), data = start_chloride)
+
+mod_3 <- glm (diedinhospital ~ cat, family=binomial(link='logit'), data = start_chloride)
+
+#start_chloride <- select(start_chloride, -cat)
+```
+
+
+```{r}
+start_chloride <- mutate(start_chloride, cat = as.numeric(cat))
+roc(start_chloride$diedinhospital, start_chloride$cat)
+```
