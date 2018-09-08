@@ -111,4 +111,6 @@ full join sepsis_patients as sp on sp.patientunitstayid = apr.patientunitstayid
 full join trauma_patients as tp on tp.patientunitstayid = apr.patientunitstayid
 full join abdominal_surgery as ab on ab.patientunitstayid = apr.patientunitstayid
 full join dialysis as rrt on rrt.patientunitstayid = apr.patientunitstayid
-where apr.apacheversion = 'IVa';
+where apr.apacheversion = 'IVa'
+and a.ph between 6.0 and 8.0
+and a.bun > 0;
