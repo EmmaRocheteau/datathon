@@ -77,24 +77,24 @@ select apr.patientunitstayid as patient_id, apr.apachescore as apache, c.chlorid
        a.ph, a.bun, b.bicarbonate, be.base_excess,
        (wc.creatinine - ic.creatinine) as change_creatinine,
        case
-         when sp.patientunitstayid = apr.patientunitstayid
+         when apr.patientunitstayid in (select * from sepsis_patients)
            then 1
          else 0
          end as sepsis,
        case
-         when tp.patientunitstayid = apr.patientunitstayid
+         when apr.patientunitstayid in (select * from trauma_patients)
            then 1
          else 0
          end as trauma,
        case
-         when ab.patientunitstayid = apr.patientunitstayid
+         when apr.patientunitstayid in (select * from abdominal_surgery)
            then 1
          else 0
          end as abdom_surg,
        ap.admitdiagnosis as admit_diagnosis,
        apr.unabridgedunitlos as los_icu,
        case
-         when rrt.patientunitstayid = apr.patientunitstayid
+         when apr.patientunitstayid in (select * from dialysis)
            then 1
          else 0
          end as rrt,
@@ -107,10 +107,6 @@ inner join bicarbonate as b on b.patientunitstayid = apr.patientunitstayid
 inner join base_excess as be on be.patientunitstayid = apr.patientunitstayid
 inner join worst_creatinine as wc on wc.patientunitstayid = apr.patientunitstayid
 inner join initial_creatinine as ic on ic.patientunitstayid = apr.patientunitstayid
-full join sepsis_patients as sp on sp.patientunitstayid = apr.patientunitstayid
-full join trauma_patients as tp on tp.patientunitstayid = apr.patientunitstayid
-full join abdominal_surgery as ab on ab.patientunitstayid = apr.patientunitstayid
-full join dialysis as rrt on rrt.patientunitstayid = apr.patientunitstayid
 where apr.apacheversion = 'IVa'
-and a.ph between 6.0 and 8.0
+and a.ph between 6.8 and 7.8
 and a.bun > 0;
