@@ -28,9 +28,24 @@ base_excess as (
   from base_excess_ungrouped
   where base_excess between -22.8 and 20.0
   group by patientunitstayid
+    ),
+initial_creatinine as (
+  select patientunitstayid, max(labresult) as creatinine
+  from lab
+  where labname = 'creatinine'
+  and labresultrevisedoffset between 0 and 86400
+  group by patientunitstayid
+  ),
+worst_creatinine as (
+  select patientunitstayid, max(labresult) as creatinine
+  from lab
+  where labname = 'creatinine'
+  group by patientunitstayid
     )
 select apr.patientunitstayid as patient_id, apr.apachescore as apache, c.chloride,
-       a.ph, a.bun, b.bicarbonate, be.base_excess, ap.admitdiagnosis as admit_diagnosis,
+       a.ph, a.bun, b.bicarbonate, be.base_excess,
+       (wc.creatinine - ic.creatinine) as change_creatinine,
+       ap.admitdiagnosis as admit_diagnosis,
        apr.unabridgedunitlos as los_icu, ap.diedinhospital as death
 from apachepatientresult as apr
 inner join apacheapsvar as a on a.patientunitstayid = apr.patientunitstayid
@@ -38,4 +53,6 @@ inner join apachepredvar as ap on ap.patientunitstayid = apr.patientunitstayid
 inner join chloride as c on c.patientunitstayid = apr.patientunitstayid
 inner join bicarbonate as b on b.patientunitstayid = apr.patientunitstayid
 inner join base_excess as be on be.patientunitstayid = apr.patientunitstayid
+inner join worst_creatinine as wc on wc.patientunitstayid = apr.patientunitstayid
+inner join initial_creatinine as ic on ic.patientunitstayid = apr.patientunitstayid
 where apr.apacheversion = 'IVa';
