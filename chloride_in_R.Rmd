@@ -184,4 +184,21 @@ roc(start_chloride$diedinhospital, start_chloride$cat)
 ```
 
 ![img](https://github.com/EmmaRocheteau/datathon/blob/master/img/roc_2.png)
+AUC=0.57
 
+```{r}
+a <- filter(start_chloride, diedinhospital == 0)
+b <- filter(start_chloride, diedinhospital == 1)
+t.test(a$labresult, b$labresult, paired = FALSE)
+```
+
+	Welch Two Sample t-test
+
+data:  `a$labresult` and `b$labresult`
+t = -22.767, df = 15430, **p-value < 2.2e-16**
+alternative hypothesis: true difference in means is not equal to 0
+95 percent confidence interval:
+ -1.861412 -1.566303
+sample estimates:
+mean of x mean of y 
+ 107.1369  108.8507 
