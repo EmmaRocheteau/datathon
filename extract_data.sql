@@ -26,11 +26,12 @@ base_excess_ungrouped as (
 base_excess as (
   select patientunitstayid, min(base_excess) as base_excess
   from base_excess_ungrouped
+  where base_excess between -22.8 and 20.0
   group by patientunitstayid
     )
 select apr.patientunitstayid as patient_id, apr.apachescore as apache, c.chloride,
-       a.ph, a.bun, b.bicarbonate, be.base_excess, apr.unabridgedunitlos as los_icu,
-       ap.diedinhospital as death
+       a.ph, a.bun, b.bicarbonate, be.base_excess, ap.admitdiagnosis as admit_diagnosis,
+       apr.unabridgedunitlos as los_icu, ap.diedinhospital as death
 from apachepatientresult as apr
 inner join apacheapsvar as a on a.patientunitstayid = apr.patientunitstayid
 inner join apachepredvar as ap on ap.patientunitstayid = apr.patientunitstayid
