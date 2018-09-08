@@ -1,9 +1,4 @@
----
-title: "Datathon-chloride"
-author: "R Samanta"
-date: "9/8/2018"
-output: html_document
----
+```{r}
 #install.packages('DBI')
 #install.packages("dplyr")
 #install.packages("dbplyr")
@@ -27,7 +22,10 @@ tbl_list
 
 ```{r}
 
-
+lab_vals <- dplyr::tbl(con, "lab") %>% 
+  dplyr::select(labname) %>%
+  group_by(labname) %>% 
+  summarise(n=n()) %>% collect()
 
 chloride <- dplyr::tbl(con, "lab") %>% 
   dplyr::select(patientunitstayid, labresultrevisedoffset, labname, labresult) %>% filter(labname == 'chloride'
@@ -55,13 +53,13 @@ quantile(chloride$labresult, probs = c(0.0005, 1-0.0005))
 install.packages('stringr')
 library(stringr)
 base_xs <- dplyr::tbl(con, "lab") %>% 
-  dplyr::select(patientunitstayid, labresultrevisedoffset, labresult)%>% filter(labname == 'Base Excess') %>% collect()
+  dplyr::select(patientunitstayid, labresultrevisedoffset, labname, labresult)%>% filter(labname == 'Base Excess') %>% collect()
 
 base_xs <- filter(base_xs, !is.na(labresult))  %>% 
   rename(time = labresultrevisedoffset) 
 
 base_def <- dplyr::tbl(con, "lab") %>% 
-  dplyr::select(patientunitstayid, labresultrevisedoffset, labresult)%>% filter(labname == 'Base Deficit') %>% collect()
+  dplyr::select(patientunitstayid, labresultrevisedoffset, labname, labresult)%>% filter(labname == 'Base Deficit') %>% collect()
 
 base_def <- filter(base_def, !is.na(labresult)) %>% 
  rename(time = labresultrevisedoffset) %>% 
@@ -77,4 +75,36 @@ quantile(base_xs$labresult, probs = c(0.005, 1-0.005))
 #  0.5% 99.5% 
 # -22.8  20.0 
 
+bicarb <- 
+  dplyr::tbl(con, "lab") %>% 
+  dplyr::select(patientunitstayid, labresultrevisedoffset, labname, labresult)%>% filter(labname == 'bicarbonate') %>% dplyr::select(-labname) %>% collect() 
 
+bicarb <- filter(bicarb, !is.na(labresult))
+
+hco3 <- 
+  dplyr::tbl(con, "lab") %>% 
+  dplyr::select(patientunitstayid, labresultrevisedoffset, labname, labresult)%>% filter(labname == 'HCO3') %>% dplyr::select(-labname) %>% collect() 
+
+hco3 <- filter(hco3, !is.na(labresult))
+
+bicarb <- bind_rows(bicarb, hco3)
+quantile(bicarb$labresult, probs = c(0.005, 0.995))
+
+#0.5% 99.5% 
+#8.9  44.0 
+
+# pH
+
+lab_vals %>% filter(str_detect(labname, regex('ph', ignore_case = T)))
+# only one lab term for pH
+
+ph <- 
+  dplyr::tbl(con, "lab") %>% 
+  dplyr::select(patientunitstayid, labresultrevisedoffset, labname, labresult)%>% filter(labname == 'pH') %>% dplyr::select(-labname) %>% collect() 
+
+ph <- filter(ph, !is.na(labresult))
+quantile(ph$labresult, probs = c(0.005, 0.995))
+
+# 0.5% 99.5% 
+# 6.96  7.59 
+```
