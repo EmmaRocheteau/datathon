@@ -108,3 +108,11 @@ quantile(ph$labresult, probs = c(0.005, 0.995))
 # 0.5% 99.5% 
 # 6.96  7.59 
 ```
+
+
+|             | Lower Filter Limit | Upper Filter Limit |   |
+|-------------|--------------------|--------------------|---|
+| Chloride    |         71         |         137        |   |
+| Base Excess |        -22.8       |         20         |   |
+| Bicarbonate |         8.9        |        44.0        |   |
+| pH          |        6.96        |        7.59        |   |
