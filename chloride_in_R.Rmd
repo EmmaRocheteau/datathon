@@ -149,7 +149,7 @@ ggplot(start_chloride, aes(y = labresult, x = diedinhospital, colour = diedinhos
 
 ```
 
-
+!img]('https://github.com/EmmaRocheteau/datathon/blob/master/img/box_plot_death.png')
 
 ```{r}
 # set a new level as > 110
@@ -182,3 +182,5 @@ mod_3 <- glm (diedinhospital ~ cat, family=binomial(link='logit'), data = start_
 start_chloride <- mutate(start_chloride, cat = as.numeric(cat))
 roc(start_chloride$diedinhospital, start_chloride$cat)
 ```
+
+![img]("https://github.com/EmmaRocheteau/datathon/blob/master/img/roc_2.png")
