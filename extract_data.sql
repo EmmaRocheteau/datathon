@@ -3,14 +3,15 @@ with chloride as (
   from lab
   where labname = 'chloride'
   and labresultrevisedoffset between 0 and 86400
-  and labresult between 71 and 137
+  and labresult between 71.0 and 137.0
   group by patientunitstayid
     ),
 bicarbonate as (
   select patientunitstayid, avg(labresult) as bicarbonate
   from lab
-  where labname = 'bicarbonate'
+  where labname in ('bicarbonate', 'HCO3')
   and labresultrevisedoffset between 0 and 86400
+  and labresult between 8.9 and 44.0
   group by patientunitstayid
     ),
 base_excess_ungrouped as (
