@@ -116,7 +116,7 @@ quantile(ph$labresult, probs = c(0.005, 0.995))
 | Base Excess |        -22.8       |         20         |   |
 | Bicarbonate |         8.9        |        44.0        |   |
 | pH          |        6.96        |        7.59        |   |
-
+| Creatinine          |        0.28        |        10.10        |   |
 
 
 
@@ -202,3 +202,299 @@ alternative hypothesis: true difference in means is not equal to 0
 sample estimates:
 mean of x mean of y 
  107.1369  108.8507 
+
+
+```{r}
+#model OR's
+require(MASS)
+exp(cbind(coef(mod), confint(mod)))  
+
+exp(cbind(coef(mod), confint(mod_2)))  
+```
+ 
+Mod 1 results
+OR [95% CI] 1.040241068 [1.037563187 1.042921791]
+
+
+ 
+Mod 1 results
+OR [95% CI] 1.040241068 [1.037563187 1.042921791]
+
+Let's do a quick times series plot for 
+- Creat
+- pH
+- BE
+- Cl
+- HCO3
+
+```{r}
+# Time filter function
+f24 <- function(x){
+  filter(x, time > 0) %>% filter(time <= 86400)
+}
+f48 <- function(x){
+  filter(x, time > 86400) %>% filter(time <= (86400*2))
+}
+f72 <- function(x){
+  filter(x, time > (86400*2)) %>% filter(time <= (86400*3))
+}
+f96 <- function(x){
+  filter(x, time > (86400*3)) %>% filter(time <= (86400*4))
+}
+
+
+
+# Creat
+creatinine <- dplyr::tbl(con, "lab") %>% 
+  dplyr::select(patientunitstayid, labresultrevisedoffset, labname, labresult) %>% filter(labname == 'creatinine') %>% filter(!is.na(labresult)) %>% collect() %>% rename(time = labresultrevisedoffset) 
+
+quantile(creatinine$labresult, probs = c(0.005, 0.995))
+
+creatinine <- filter(creatinine, labresult > 0.28) %>% filter(labresult < 10.1)
+
+creat_24 <- f24(creatinine) %>% group_by(patientunitstayid) %>% 
+  summarise(max_creat_24 = max(labresult)) %>% 
+  #mutate(time = 24) %>% 
+  filter(patientunitstayid %in% start_chloride$patientunitstayid)
+
+creat_48 <- f48(creatinine)%>% group_by(patientunitstayid) %>% 
+  summarise(max_creat_48 = max(labresult)) %>% 
+  #mutate(time = 48) %>% 
+  filter(patientunitstayid %in% start_chloride$patientunitstayid)
+
+creat_72 <- f72(creatinine)%>% group_by(patientunitstayid) %>% 
+   summarise(max_creat_72 = max(labresult)) %>%
+  #mutate(time = 72) %>% 
+  filter(patientunitstayid %in% start_chloride$patientunitstayid)
+
+creat_96 <- f96(creatinine)%>% group_by(patientunitstayid) %>% 
+   summarise(max_creat_96 = max(labresult)) %>%
+  #mutate(time = 96) %>% 
+  filter(patientunitstayid %in% start_chloride$patientunitstayid)
+
+st_chloride <- 
+  left_join(start_chloride, creat_24, by = 'patientunitstayid') %>% 
+  left_join( creat_48, by = 'patientunitstayid')%>% 
+  left_join( creat_72, by = 'patientunitstayid') %>% 
+    left_join( creat_96, by = 'patientunitstayid') %>% 
+  mutate(delta_24 = max_creat_48 - max_creat_24) %>% 
+  mutate(delta_48 = max_creat_72 - max_creat_24) %>% 
+  mutate(delta_72 = max_creat_96 - max_creat_24)  
+
+
+```
+
+Chloride and Creatinine
+```{r}
+
+t1 <- ggplot(creat_time, aes(x = time, y = delta_creat, group  = cat2 , colour = cat2))
+t1 + geom_line() + theme_bw() + scale_y_continuous(limits = c(-1, 0.5))+ 
+  labs(y= "Change in Creatinine (mg/dl)") +
+  scale_color_manual(labels = c("Normal", "Low", "Mod-High", "Severe-High"), values = c('blue2', 'red2', 'orange', 'black')) +
+  theme(legend.title = element_blank())
+```
+
+pH and Chloride
+```{r}
+
+```
+
+```{r}
+start_chloride <- left_join(start_chloride, dialysis, by = 'patientunitstayid') %>% 
+  mutate(RRT = sapply(RRT, function(x) ifelse(is.na(x), 0L, x))) %>% 
+  mutate(RRT= as.factor(RRT))
+
+mod_5 <- glm(RRT ~ labresult, family = binomial(link = 'logit'), data = start_chloride)
+summary(mod_5)
+
+exp(cbind(coef(mod_5), confint(mod_5)))  
+nrow(dialysis)
+```
+Risk of dialysis (4.5% of patients)
+                                2.5 %       97.5 %
+(Intercept) 3.717851e-05 0.0000339232 4.074207e-05
+labresult   1.112971e+00 1.1120347411 1.113909e+00
+
+```{r}
+
+sepsis_patients <- mutate(sepsis_patients, sepsis = 1L)
+start_chloride <- left_join(start_chloride, sepsis_patients, by = 'patientunitstayid') %>% 
+  mutate(sepsis = sapply(sepsis, function(x) ifelse(is.na(x), 0L, x))) %>% 
+  mutate(sepsis= as.factor(sepsis))
+
+septic_pats <- filter(start_chloride, sepsis == 1)
+
+mod_6 <- glm(diedinhospital ~ labresult, family = binomial(link = 'logit'), data = septic_pats)
+summary(mod_6)
+
+exp(cbind(coef(mod_6), confint(mod_6)))
+nrow(sepsis_patients)
+```
+
+for septic patients
+
+                          2.5 %    97.5 %
+(Intercept) 0.1356168 0.1324404 0.1388691
+labresult   1.0108184 1.0106045 1.0110323
+
+```{r}
+trauma_patients <- mutate(trauma_patients, trauma = 1)
+start_chloride <- left_join(start_chloride, trauma_patients, by = 'patientunitstayid') %>% 
+  mutate(trauma = sapply(trauma, function(x) ifelse(is.na(x), 0L, x))) %>% 
+  mutate(trauma= as.factor(trauma))
+
+trauma_pats <- filter(start_chloride, trauma == 1)
+
+mod_7 <- glm(diedinhospital ~ labresult, family = binomial(link = 'logit'), data = trauma_pats)
+summary(mod_7)
+
+exp(cbind(coef(mod_7), confint(mod_7)))
+nrow(trauma_patients)
+```
+
+
+
+```{r}
+setwd("/Volumes/Macintosh HD/Users/romster/Desktop")
+
+emma_cohort <- read.csv("desired_cohort.csv", header= T, stringsAsFactors = F) %>% tbl_df()
+emma_cohort
+mod_8 <- lm(base_excess ~ chloride * apache, data = emma_cohort)
+summary(mod_8)
+
+mod_9 <- glm(death ~ chloride * apache, family = binomial, data = emma_cohort)
+summary(mod_9)
+
+library(MASS)
+exp(cbind(coef(mod_9), confint(mod_9)))
+```
+
+ALL PATIENTS
+Call:
+glm(formula = death ~ chloride * apache, family = binomial, data = emma_cohort)
+
+Deviance Residuals: 
+    Min       1Q   Median       3Q      Max  
+-2.8995  -0.5983  -0.3986  -0.2432   3.5700  
+
+Coefficients:
+                  Estimate Std. Error z value Pr(>|z|)    
+(Intercept)     -1.364e+01  9.789e-01 -13.938   <2e-16 ***
+chloride         8.053e-02  8.886e-03   9.063   <2e-16 ***
+apache           1.319e-01  9.719e-03  13.571   <2e-16 ***
+chloride:apache -8.461e-04  8.794e-05  -9.622   <2e-16 ***
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+(Dispersion parameter for binomial family taken to be 1)
+
+    Null deviance: 27402  on 28323  degrees of freedom
+Residual deviance: 21947  on 28320  degrees of freedom
+AIC: 21955
+
+Number of Fisher Scoring iterations: 5
+
+```{r}
+mod_10 <- 
+  filter(emma_cohort, sepsis == 1) %>% 
+glm(death ~ chloride * apache, family = binomial(link = 'logit'), .)
+summary(mod_10)
+exp(cbind(coef(mod_10), confint(mod_10)))
+
+```
+SEPSIS
+                                    2.5 %       97.5 %
+(Intercept)     1.187396e-06 1.737817e-07 8.062887e-06
+chloride        1.083857e+00 1.065155e+00 1.102909e+00
+apache          1.140982e+00 1.119500e+00 1.162975e+00
+chloride:apache 9.991542e-01 9.989818e-01 9.993263e-01
+
+```{r}
+a <- filter(emma_cohort, sepsis == 1)
+b <- filter(emma_cohort, sepsis == 0)
+
+t.test(a$chloride, b$chloride, paired = FALSE)
+```
+
+
+```{r}
+mod_11 <- glm(rrt ~ chloride * apache, family = binomial(link = 'logit'), data = emma_cohort)
+summary(mod_11)
+exp(cbind(coef(mod_11), confint(mod_11)))
+```
+Dialysis requirement
+
+                              2.5 %      97.5 %
+(Intercept)     28.0538846 3.0442460 252.7641304
+chloride         0.9298328 0.9109383   0.9492767
+apache           0.9948670 0.9743345   1.0160670
+chloride:apache  1.0002584 1.0000628   1.0004520
+
+```{r}
+mod_12 <- filter(emma_cohort, abdom_surg ==1) %>% 
+  glm(death ~ chloride * apache, family = binomial(link = 'logit'), .)
+summary(mod_12)
+exp(cbind(coef(mod_12), confint(mod_12)))
+```
+
+
+```{r}
+mod_13 <- filter(emma_cohort, trauma == 1) %>% 
+  glm(death ~ chloride * apache, family = binomial(link = 'logit'), .)
+summary(mod_13)
+exp(cbind(coef(mod_13), confint(mod_13)))
+```
+TRAUMA
+                                                2.5 %       97.5 %
+(Intercept)     0.00000001385351 0.000000000003785338 0.0000515992
+chloride        1.12064916356913 1.042264636182054893 1.2039186670
+apache          1.15074891503779 1.058895627085531421 1.2504482962
+chloride:apache 0.99916660617857 0.998443330946446217 0.9998978875
+
+
+```{r}
+
+emma_cohort <- mutate(emma_cohort, 
+       high_chloride = sapply(chloride, function(x)
+  ifelse(x >= 110, 1, 0)))
+
+mod_14 <- glm(death ~ high_chloride * apache, family = binomial(link = 'logit'), data = emma_cohort)
+summary(mod_14)
+exp(cbind(coef(mod_14), confint(mod_14)))
+```
+
+```{r}
+group_by(emma_cohort, trauma) %>% summarise(mean_chlo = mean(chloride, na.rm = T))
+
+group_by(emma_cohort, abdom_surg) %>% summarise(mean_chlo = mean(chloride, na.rm = T))
+
+group_by(emma_cohort, rrt) %>% summarise(mean_chlo = mean(chloride, na.rm = T))
+
+```
+
+```{r}
+library(survival)
+coxph(Surv(los_icu, death) ~ chloride * apache + strata (high_chloride),  data = emma_cohort)
+
+emma_cohort <- mutate(emma_cohort, time1 = 0)
+emma_cohort$cox_mod <- Surv()
+```
+
+
+```{r}
+emma_cohort
+```
+
+```{r}
+setwd("/Volumes/Macintosh HD/Users/romster/Desktop")
+
+emma_cohort2 <- read.csv("desired_cohort2.csv", header= T, stringsAsFactors = F) %>% tbl_df()
+
+
+
+mod_9b <- glm(death ~ chloride * apache, family = binomial, data = emma_cohort)
+summary(mod_9b)
+exp(cbind(coef(mod_9b), confint(mod_9b)))
+
+
+```
