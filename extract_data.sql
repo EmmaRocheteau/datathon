@@ -2,7 +2,8 @@ drop materialized view if exists sepsis_patients cascade;
 create materialized view sepsis_patients as
   select patientunitstayid
   from diagnosis
-  where diagnosisstring like '%sepsis%';
+  where diagnosisstring like '%sepsis%'
+  or diagnosisstring like '%septic%';
 
 -- we want to avoid matching all trauma because otherwise it matches all burns/trauma
 -- e.g. we would not want to include 'burns/trauma|dermatology|rash, infectious'
@@ -32,7 +33,7 @@ with chloride as (
   select patientunitstayid, max(labresult) as chloride
   from lab
   where labname = 'chloride'
-  and labresultrevisedoffset between 0 and 86400
+  and labresultrevisedoffset between 0 and 1440
   and labresult between 71.0 and 137.0
   group by patientunitstayid
   ),
@@ -40,7 +41,7 @@ bicarbonate as (
   select patientunitstayid, avg(labresult) as bicarbonate
   from lab
   where labname in ('bicarbonate', 'HCO3')
-  and labresultrevisedoffset between 0 and 86400
+  and labresultrevisedoffset between 0 and 1440
   and labresult between 8.9 and 44.0
   group by patientunitstayid
   ),
@@ -52,7 +53,7 @@ base_excess_ungrouped as (
       end as base_excess
   from lab
   where labname in ('Base Deficit', 'Base Excess')
-  and labresultrevisedoffset between 0 and 86400
+  and labresultrevisedoffset between 0 and 1440
   ),
 base_excess as (
   select patientunitstayid, min(base_excess) as base_excess
@@ -64,7 +65,14 @@ initial_creatinine as (
   select patientunitstayid, max(labresult) as creatinine
   from lab
   where labname = 'creatinine'
-  and labresultrevisedoffset between 0 and 86400
+  and labresultrevisedoffset between 0 and 1440
+  group by patientunitstayid
+  ),
+pH as (
+  select patientunitstayid, avg(labresult) as pH
+  from lab
+  where labname = 'pH'
+  and labresultrevisedoffset between 0 and 1440
   group by patientunitstayid
   ),
 worst_creatinine as (
@@ -74,7 +82,7 @@ worst_creatinine as (
   group by patientunitstayid
   )
 select apr.patientunitstayid as patient_id, apr.apachescore as apache, c.chloride,
-       a.ph, a.bun, b.bicarbonate, be.base_excess,
+       ph.ph, a.bun, b.bicarbonate, be.base_excess,
        (wc.creatinine - ic.creatinine) as change_creatinine,
        case
          when apr.patientunitstayid in (select * from sepsis_patients)
@@ -107,6 +115,7 @@ inner join bicarbonate as b on b.patientunitstayid = apr.patientunitstayid
 inner join base_excess as be on be.patientunitstayid = apr.patientunitstayid
 inner join worst_creatinine as wc on wc.patientunitstayid = apr.patientunitstayid
 inner join initial_creatinine as ic on ic.patientunitstayid = apr.patientunitstayid
+inner join pH as ph on ph.patientunitstayid = apr.patientunitstayid
 where apr.apacheversion = 'IVa'
-and a.ph between 6.8 and 7.8
-and a.bun > 0;
+and a.bun > 0
+and ap.age > 15;
