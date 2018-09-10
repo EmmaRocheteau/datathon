@@ -2,9 +2,14 @@
 #install.packages('DBI')
 #install.packages("dplyr")
 #install.packages("dbplyr")
+#install.packages('readr')
+#install.packages('bigrquery')
+
 library(DBI)
 library(dplyr)
 library(dbplyr)
+library(readr)
+library(bigrquery)
 
 con <- dbConnect(
   bigrquery::bigquery(),
@@ -18,6 +23,25 @@ tbl_list <- dbListTables(con)
 tbl_list
 #dplyr::tbl(con, "allergy") %>% collect()
 
+
+project_id <- "london-datathon"
+
+run_query <- function(query){
+    data <- query_exec(query, project=project_id, use_legacy_sql = FALSE, max_pages = Inf)
+    return(data)
+}
+```
+
+```{r emmas_code_pull}
+sepsis_patients <- run_query('select * from `london-datathon.temp.chloride_septic_pats`') 
+sepsis_patients <- tbl_df(sepsis_patients)
+
+trauma_patients <- run_query('select * from `london-datathon.temp.chloride_trauma_pats`') 
+trauma_patients <- tbl_df(trauma_patients)
+
+abdo_surg <- run_query('select * from `london-datathon.temp.chloride_gi_surg_pats`') %>% tbl_df() 
+
+dialysis <-  run_query('select * from `london-datathon.temp.chloride_dialysis`') %>% tbl_df() %>% mutate(RRT = 1)
 ```
 
 ```{r}
@@ -25,11 +49,13 @@ tbl_list
 lab_vals <- dplyr::tbl(con, "lab") %>% 
   dplyr::select(labname) %>%
   group_by(labname) %>% 
-  summarise(n=n()) %>% collect()
+  dplyr::summarise(n=n())
+%>% collect()
 
 chloride <- dplyr::tbl(con, "lab") %>% 
-  dplyr::select(patientunitstayid, labresultrevisedoffset, labname, labresult) %>% filter(labname == 'chloride'
-  ) %>% filter(!is.na(labresult) %>% collect() %>% rename(time = labresultrevisedoffset) 
+  dplyr::select(patientunitstayid, labresultrevisedoffset, labname, labresult) %>% filter(labname == 'chloride') %>% filter(!is.na(labresult)) %>% collect() 
+
+%>% rename(time = labresultrevisedoffset) 
   
   
 t2 <- ggplot(chloride, aes(x = labresult)) 
@@ -288,7 +314,7 @@ Chloride and Creatinine
 ```{r}
 
 t1 <- ggplot(creat_time, aes(x = time, y = delta_creat, group  = cat2 , colour = cat2))
-t1 + geom_line() + theme_bw() + scale_y_continuous(limits = c(-1, 0.5))+ 
+t1 + geom_smooth() + theme_bw() + scale_y_continuous(limits = c(-1, 0.5))+ 
   labs(y= "Change in Creatinine (mg/dl)") +
   scale_color_manual(labels = c("Normal", "Low", "Mod-High", "Severe-High"), values = c('blue2', 'red2', 'orange', 'black')) +
   theme(legend.title = element_blank())
@@ -490,11 +516,23 @@ setwd("/Volumes/Macintosh HD/Users/romster/Desktop")
 
 emma_cohort2 <- read.csv("desired_cohort2.csv", header= T, stringsAsFactors = F) %>% tbl_df()
 
-
-
-mod_9b <- glm(death ~ chloride * apache, family = binomial, data = emma_cohort)
+mod_9b <- glm(death ~ chloride * apache, family = binomial, data = emma_cohort2)
 summary(mod_9b)
 exp(cbind(coef(mod_9b), confint(mod_9b)))
 
+mod_10b <- 
+  filter(emma_cohort2, sepsis == 1) %>% 
+glm(death ~ chloride * apache, family = binomial(link = 'logit'), .)
+summary(mod_10b)
+exp(cbind(coef(mod_10b), confint(mod_10b)))
+
+mod_11b <- glm(rrt ~ chloride * apache, family = binomial(link = 'logit'), data = emma_cohort2)
+summary(mod_11b)
+exp(cbind(coef(mod_11b), confint(mod_11b)))
+
+mod_12b <- filter(emma_cohort2, abdom_surg ==1) %>% 
+  glm(death ~ chloride * apache, family = binomial(link = 'logit'), .)
+summary(mod_12b)
+exp(cbind(coef(mod_12b), confint(mod_12b)))
 
 ```
