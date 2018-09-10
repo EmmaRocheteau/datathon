@@ -86,7 +86,7 @@ creat <- filter(lab_data, labname == 'creatinine') %>%
   rename(time = labresultrevisedoffset)
 
 a <- list()
-j <- seq(4,100, by = 4)
+j <- seq(4,124, by = 4)
 varlist = list('patientunitstayid', 'labresult')
 
 sum_meth <- paste0('mean(', varlist[2],', na.rm =T)')
@@ -95,37 +95,46 @@ first_col <- filter(creat, time < 4*60) %>% group_by(patientunitstayid) %>%
 
 for (i in seq_along(j)){
   summ_name <- paste('avg_', j[i], sep = '')
-#  first_col <- filter(creat, time < 4*60) %>% group_by(patientunitstayid) %>% 
- #   summarise(avg_4 = mean(labresult, na.rm = T))
   a[[i]] <- filter(creat, time < j[i]*60) %>% 
     group_by(patientunitstayid) %>% 
     summarise_( .dots = setNames(sum_meth, summ_name)) 
-  #  mutate(.dots(summ))
-    #%>% 
-    #mutate_(.dots = setNames(list(~summ_name - avg_4), summ_name))
-  
 }
 
 b <- Reduce(merge, a)
 d <- data.frame(patientunitstayid = b[,1]) %>% tbl_df
-b <- dplyr::select(b, -1)
+b <- dplyr::select(b, -patientunitstayid)
 for (i in 1:ncol(b)){
   d[,i+1] <- b[,i] - b[,1]
   names(d)[i+1]<- paste((i-1)*4, sep = '')
 }
+library(reshape2)
 
 d1 <- left_join(d, dplyr::select(start_chloride, -labresult), by = 'patientunitstayid') %>% 
    dplyr::select(patientunitstayid, high_chlor, everything()) %>% 
    melt(id = 1:2) %>% group_by(high_chlor, variable) %>% 
    summarise(delta_creat = mean(value, na.rm =T)) %>% filter(!is.na(high_chlor)) %>% 
   rename(time = variable) %>% ungroup() %>% 
-  mutate(high_chlor = factor(high_chlor))
+  mutate(high_chlor = factor(high_chlor)) %>% 
+  mutate(time = as.numeric(as.character(time)))
 
+# no in each group
+d %>% left_join(dplyr::select(start_chloride, -labresult), by = 'patientunitstayid')  %>% group_by(high_chlor) %>% 
+  summarise(n=n() )
 
 ggplot(d1, aes(x = time, y = delta_creat, group = high_chlor, colour = high_chlor) ) + geom_smooth(span = 0.5, size = 0.8, alpha = 0.6) + geom_point() + theme_bw() + 
-  labs(x = 'Time Post ICU Admission (hr)', y = 'Mean Change in Creatinine (mg/dl)') + scale_colour_manual(values = c('blue3', 'black'), labels = c("Cl < 110", "Cl >110")) +
-  theme(legend.title = element_blank(), legend.position = c(0.9, 0.8))
-  
+  labs(x = 'Hours Post ICU Admission', y = 'Mean Change in Creatinine (mg/dl)') + scale_colour_manual(values = c('blue3', 'black'), labels = c("Cl < 110 mmol/L", "Cl ≥ 110 mmol/L")) +
+  theme(legend.title = element_blank(), legend.position = c(0.9, 0.8)) +
+  scale_x_continuous(limits = c(0,125), breaks = seq(0,120, 12), expand = c(0,0)) 
 ```
 
+high_chlor      n  
+       <dbl>  <int>  
+1       0    106127  
+2       1.00  34382  
+3      NA       830  
+
+
+
 ![creat_plot](https://github.com/EmmaRocheteau/datathon/blob/master/img/Delta_Creatinine.png)
+
+![creat_plot](https://github.com/EmmaRocheteau/datathon/blob/master/img/delta_creat_120hr.png)
