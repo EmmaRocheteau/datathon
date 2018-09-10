@@ -1,0 +1,131 @@
+---
+title: "post datathon"
+author: "romit Samanta"
+date: "10/09/2018"
+output: html_document
+---
+
+```{r}
+#install.packages(c("DBI", "readr", "bigrquery"))
+library(DBI)
+library(dplyr)
+library(readr)
+library(bigrquery)
+
+
+con <- dbConnect(
+  bigrquery::bigquery(),
+  project = "physionet-data",
+  dataset = "eicu_crd",
+  billing = "london-datathon"
+)
+con 
+
+tbl_list <- dbListTables(con)
+tbl_list
+
+project_id <- "london-datathon"
+
+run_query <- function(query){
+    data <- query_exec(query, project=project_id, use_legacy_sql = FALSE, max_pages = Inf)
+    return(data)
+}
+```
+
+```{r}
+# pull all the data
+lab_data <- run_query("
+                      SELECT * FROM 
+                      `london-datathon.temp.chlroide_tab1`") %>% tbl_df()
+
+lab_data <- filter(lab_data, !is.na(labresult))
+```
+
+
+```{r}
+start_chloride <- filter(lab_data, labname == 'chloride') %>% 
+  filter(labresult >= 71 & labresult <= 137) %>% 
+  rename(time = labresultrevisedoffset) %>% 
+  filter(time < 1440) %>% 
+  group_by(patientunitstayid) %>% 
+  summarise(labresult = max(labresult, na.rm = T)) %>% 
+  mutate(high_chlor = sapply(labresult, function(x) ifelse(x >=110, 1, 0))) 
+
+serial_creat <- 
+  filter(lab_data, labname == 'creatinine') %>% 
+  filter(labresult >= 0.28 & labresult <= 10.1) %>% 
+  rename(time = labresultrevisedoffset) %>% 
+  filter(time <= 1440) %>% 
+  group_by(patientunitstayid) %>% summarise(admit_creat  = min(labresult, na.rm = T)) %>% 
+  left_join( lab_data %>% filter(labname == 'creatinine') %>% 
+               filter(labresult >= 0.28 & labresult <= 10.1) %>% 
+               filter(labresultrevisedoffset <= 2*1440 & labresultrevisedoffset > 1440) %>% 
+               group_by(patientunitstayid) %>% 
+               summarise(f24_creat = max(labresult, na.rm= T)), by = 'patientunitstayid' ) %>% 
+   left_join( lab_data %>% filter(labname == 'creatinine') %>% 
+               filter(labresult >= 0.28 & labresult <= 10.1) %>% 
+               filter(labresultrevisedoffset <= 3*1440 & labresultrevisedoffset > 2*1440) %>% 
+               group_by(patientunitstayid) %>% 
+               summarise(f48_creat = max(labresult, na.rm= T)), by = 'patientunitstayid' ) %>% 
+   left_join( lab_data %>% filter(labname == 'creatinine') %>% 
+               filter(labresult >= 0.28 & labresult <= 10.1) %>% 
+               filter(labresultrevisedoffset <= 4*1440 & labresultrevisedoffset > 3*1440) %>% 
+               group_by(patientunitstayid) %>% 
+               summarise(f_creat = max(labresult, na.rm= T)), by = 'patientunitstayid' ) %>% 
+   left_join( lab_data %>% filter(labname == 'creatinine') %>% 
+               filter(labresult >= 0.28 & labresult <= 10.1) %>% 
+               filter(labresultrevisedoffset <= 2*1440 & labresultrevisedoffset > 1440) %>% 
+               group_by(patientunitstayid) %>% 
+               summarise(f8_creat = max(labresult, na.rm= T)), by = 'patientunitstayid' )
+    
+
+
+# create four hourly averaged creats
+creat <- filter(lab_data, labname == 'creatinine') %>% 
+  filter(labresult >= 0.28 & labresult <= 10.1) %>% 
+  rename(time = labresultrevisedoffset)
+
+a <- list()
+j <- seq(4,100, by = 4)
+varlist = list('patientunitstayid', 'labresult')
+
+sum_meth <- paste0('mean(', varlist[2],', na.rm =T)')
+first_col <- filter(creat, time < 4*60) %>% group_by(patientunitstayid) %>% 
+    summarise(avg_4 = mean(labresult, na.rm = T))
+
+for (i in seq_along(j)){
+  summ_name <- paste('avg_', j[i], sep = '')
+#  first_col <- filter(creat, time < 4*60) %>% group_by(patientunitstayid) %>% 
+ #   summarise(avg_4 = mean(labresult, na.rm = T))
+  a[[i]] <- filter(creat, time < j[i]*60) %>% 
+    group_by(patientunitstayid) %>% 
+    summarise_( .dots = setNames(sum_meth, summ_name)) 
+  #  mutate(.dots(summ))
+    #%>% 
+    #mutate_(.dots = setNames(list(~summ_name - avg_4), summ_name))
+  
+}
+
+b <- Reduce(merge, a)
+d <- data.frame(patientunitstayid = b[,1]) %>% tbl_df
+b <- dplyr::select(b, -1)
+for (i in 1:ncol(b)){
+  d[,i+1] <- b[,i] - b[,1]
+  names(d)[i+1]<- paste((i-1)*4, sep = '')
+}
+
+d1 <- left_join(d, dplyr::select(start_chloride, -labresult), by = 'patientunitstayid') %>% 
+   dplyr::select(patientunitstayid, high_chlor, everything()) %>% 
+   melt(id = 1:2) %>% group_by(high_chlor, variable) %>% 
+   summarise(delta_creat = mean(value, na.rm =T)) %>% filter(!is.na(high_chlor)) %>% 
+  rename(time = variable) %>% ungroup() %>% 
+  mutate(high_chlor = factor(high_chlor))
+
+
+ggplot(d1, aes(x = time, y = delta_creat, group = high_chlor, colour = high_chlor) ) + geom_smooth(span = 0.5, size = 0.8, alpha = 0.6) + geom_point() + theme_bw() + 
+  labs(x = 'Time Post ICU Admission (hr)', y = 'Mean Change in Creatinine (mg/dl)') + scale_colour_manual(values = c('blue3', 'black'), labels = c("Cl < 110", "Cl >110")) +
+  theme(legend.title = element_blank(), legend.position = c(0.9, 0.8))
+  
+```
+
+![creat_plot](https://github.com/EmmaRocheteau/datathon/blob/master/img/Delta_Creatinine.png)
