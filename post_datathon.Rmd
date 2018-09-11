@@ -138,3 +138,112 @@ high_chlor      n
 ![creat_plot](https://github.com/EmmaRocheteau/datathon/blob/master/img/Delta_Creatinine.png)
 
 ![creat_plot](https://github.com/EmmaRocheteau/datathon/blob/master/img/delta_creat_120hr.png)
+
+
+```{r}
+mod1a <-  glm(delta_creat ~ high_chlor * time, data = d1)
+summary(mod1a)
+library(MASS)
+exp(cbind(coef(mod1a), confint(mod1a)))
+
+emma_cohort2 <- read.csv("desired_cohort2.csv", header = T, stringsAsFactors = F) %>% tbl_df() %>% rename(patientunitstayid = patient_id)
+
+d %>% left_join(dplyr::select(emma_cohort2, patientunitstayid, apache), by = 'patientunitstayid') %>% 
+  left_join(dplyr::select(start_chloride, -labresult), by = 'patientunitstayid') %>% 
+   dplyr::select(patientunitstayid, high_chlor, apache, everything()) %>% 
+  melt(id  =1:3 ) %>% 
+  group_by(high_chlor, variable) %>% 
+   summarise(apache = mean(apache, na.rm = T), delta_creat = mean(value, na.rm =T))
+
+%>%filter(!is.na(high_chlor)) %>% 
+  rename(time = variable) %>% ungroup() %>% 
+  mutate(high_chlor = factor(high_chlor)) %>% 
+  mutate(time = as.numeric(as.character(time))) -> 
+  d2
+  
+```
+
+# Track the difference in sepsis / trauma / surgery:
+
+```{r}
+sepsis_patients <- run_query('select * from `london-datathon.temp.chloride_septic_pats`') 
+sepsis_patients <- tbl_df(sepsis_patients) %>% mutate(sepsis = 1L)
+
+trauma_patients <- run_query('select * from `london-datathon.temp.chloride_trauma_pats`') 
+trauma_patients <- tbl_df(trauma_patients) %>% mutate(trauma = 1L)
+
+abdo_surg <- run_query('select * from `london-datathon.temp.chloride_gi_surg_pats`') %>% tbl_df()  %>% mutate(gi_surg = 1L)
+
+dialysis <-  run_query('select * from `london-datathon.temp.chloride_dialysis`') %>% tbl_df() %>% mutate(RRT = 1L)
+```
+
+# Sepsis
+
+```{r}
+septic_creat <- 
+  left_join(d, sepsis_patients, by = 'patientunitstayid' ) %>% 
+   left_join(dplyr::select(start_chloride, -labresult), by = 'patientunitstayid') %>% 
+   dplyr::select(patientunitstayid, high_chlor, sepsis, everything()) %>% 
+  filter(sepsis == 1) %>% 
+  melt(id  =1:3 ) %>% 
+  group_by(high_chlor, variable) %>% 
+   summarise(delta_creat = mean(value, na.rm =T)) %>% ungroup() %>% 
+  mutate(variable = as.numeric(as.character(variable))) %>% rename(time = variable) %>% 
+  mutate(high_chlor = as.factor(high_chlor)) %>% filter(!is.na(high_chlor))
+
+ggplot(septic_creat, aes(x = time, y = delta_creat, group = high_chlor, colour = high_chlor) ) + geom_smooth(span = 0.5, size = 0.8, alpha = 0.6) + geom_point() + theme_bw() + 
+  labs(x = 'Hours Post ICU Admission', y = 'Mean Change in Creatinine (mg/dl)') + scale_colour_manual(values = c('blue3', 'black'), labels = c("Cl < 110 mmol/L", "Cl ≥ 110 mmol/L")) +
+  theme(legend.title = element_blank(), legend.position = c(0.9, 0.8)) +
+  scale_x_continuous(limits = c(0,125), breaks = seq(0,120, 12), expand = c(0,0)) 
+```
+
+![creat_plot](https://github.com/EmmaRocheteau/datathon/blob/master/img/septic_delta_creat_120hr.png)
+
+# Trauma
+
+```{r}
+trauma_creat <- 
+  left_join(d, trauma_patients, by = 'patientunitstayid' ) %>% 
+   left_join(dplyr::select(start_chloride, -labresult), by = 'patientunitstayid') %>% 
+   dplyr::select(patientunitstayid, high_chlor, trauma, everything()) %>% 
+  filter(trauma == 1) %>% 
+  melt(id  =1:3 ) %>% 
+  group_by(high_chlor, variable) %>% 
+   summarise(delta_creat = mean(value, na.rm =T)) %>% ungroup() %>% 
+  mutate(variable = as.numeric(as.character(variable))) %>% rename(time = variable) %>% 
+  mutate(high_chlor = as.factor(high_chlor)) %>% filter(!is.na(high_chlor))
+
+ggplot(trauma_creat, aes(x = time, y = delta_creat, group = high_chlor, colour = high_chlor) ) + geom_smooth(span = 0.5, size = 0.8, alpha = 0.6) + geom_point() + theme_bw() + 
+  labs(x = 'Hours Post ICU Admission', y = 'Mean Change in Creatinine (mg/dl)') + scale_colour_manual(values = c('blue3', 'black'), labels = c("Cl < 110 mmol/L", "Cl ≥ 110 mmol/L")) +
+  theme(legend.title = element_blank(), legend.position = c(0.2, 0.2)) +
+  scale_x_continuous(limits = c(0,125), breaks = seq(0,120, 12), expand = c(0,0)) 
+```
+
+![trauma_plot](https://github.com/EmmaRocheteau/datathon/blob/master/img/trauma_delta_creat_120hr.png)
+
+
+# Abdominal Surgery
+
+```{r}
+surg_creat <- 
+  left_join(d, abdo_surg, by = 'patientunitstayid' ) %>% 
+   left_join(dplyr::select(start_chloride, -labresult), by = 'patientunitstayid') %>% 
+   dplyr::select(patientunitstayid, high_chlor, gi_surg, everything()) %>% 
+  filter(gi_surg == 1) %>% 
+  melt(id  =1:3 ) %>% 
+  group_by(high_chlor, variable) %>% 
+   summarise(delta_creat = mean(value, na.rm =T)) %>% ungroup() %>% 
+  mutate(variable = as.numeric(as.character(variable))) %>% 
+  rename(time = variable) %>% 
+  mutate(high_chlor = as.factor(high_chlor)) %>% filter(!is.na(high_chlor))
+
+ggplot(surg_creat, aes(x = time, y = delta_creat, group = high_chlor, colour = high_chlor) ) + 
+  geom_smooth(span = 0.5, size = 0.8, alpha = 0.6) + geom_point() +
+  theme_bw() + 
+  labs(x = 'Hours Post ICU Admission', y = 'Mean Change in Creatinine (mg/dl)') + 
+  scale_colour_manual(values = c('blue3', 'black'), labels = c("Cl < 110 mmol/L", "Cl ≥ 110 mmol/L")) +
+  theme(legend.title = element_blank(), legend.position = c(0.2, 0.2)) +
+  scale_x_continuous(limits = c(0,125), breaks = seq(0,120, 12), expand = c(0,0)) 
+```
+
+![surgery_plot](https://github.com/EmmaRocheteau/datathon/blob/master/img/gi_surg_delta_creat_120hr.png)
