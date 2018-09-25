@@ -180,8 +180,9 @@ dialysis <-  run_query('select * from `london-datathon.temp.chloride_dialysis`')
 # Sepsis
 
 ```{r}
+sepsis_patients %>% group_by(patientunitstayid) %>% summarise(sepsis = 1L) -> sepsis_patients2
 septic_creat <- 
-  left_join(d, sepsis_patients, by = 'patientunitstayid' ) %>% 
+  left_join(d, sepsis_patients2, by = 'patientunitstayid' ) %>% 
    left_join(dplyr::select(start_chloride, -labresult), by = 'patientunitstayid') %>% 
    dplyr::select(patientunitstayid, high_chlor, sepsis, everything()) %>% 
   filter(sepsis == 1) %>% 
@@ -202,8 +203,10 @@ ggplot(septic_creat, aes(x = time, y = delta_creat, group = high_chlor, colour =
 # Trauma
 
 ```{r}
+trauma_patients2 <- trauma_patients %>% group_by(patientunitstayid) %>% 
+  summarise(trauma = 1L)
 trauma_creat <- 
-  left_join(d, trauma_patients, by = 'patientunitstayid' ) %>% 
+  left_join(d, trauma_patients2, by = 'patientunitstayid' ) %>% 
    left_join(dplyr::select(start_chloride, -labresult), by = 'patientunitstayid') %>% 
    dplyr::select(patientunitstayid, high_chlor, trauma, everything()) %>% 
   filter(trauma == 1) %>% 
@@ -225,8 +228,9 @@ ggplot(trauma_creat, aes(x = time, y = delta_creat, group = high_chlor, colour =
 # Abdominal Surgery
 
 ```{r}
+abdo_surg2 <- group_by(abdo_surg, patientunitstayid) %>% summarise(gi_surg = 1L)
 surg_creat <- 
-  left_join(d, abdo_surg, by = 'patientunitstayid' ) %>% 
+  left_join(d, abdo_surg2, by = 'patientunitstayid' ) %>% 
    left_join(dplyr::select(start_chloride, -labresult), by = 'patientunitstayid') %>% 
    dplyr::select(patientunitstayid, high_chlor, gi_surg, everything()) %>% 
   filter(gi_surg == 1) %>% 
@@ -247,3 +251,143 @@ ggplot(surg_creat, aes(x = time, y = delta_creat, group = high_chlor, colour = h
 ```
 
 ![surgery_plot](https://github.com/EmmaRocheteau/datathon/blob/master/img/gi_surg_delta_creat_120hr.png)
+
+Some stats on these graphs
+```{r}
+# as each point is a mean delta value, each point is effectively a normal distribution of delta's which means we can simple do a t.test or a linear regression once we've joined with a covariate column
+
+gi_120 <-  d %>% dplyr::select(patientunitstayid, `120`) %>% 
+  left_join(abdo_surg2, by = "patientunitstayid") %>% 
+  filter(gi_surg == 1) %>% 
+  left_join( (emma_cohort2 %>%  dplyr::select(patientunitstayid, apache)), by = 'patientunitstayid' ) %>% 
+  filter(!is.na(apache)) %>% 
+  left_join( (dplyr::select(start_chloride, patientunitstayid, high_chlor)), by = 'patientunitstayid') %>% filter(!is.na(high_chlor))
+# n = 798
+# need to make a new apache table seperately to improve these n's after joining...
+
+a <- filter(gi_120, high_chlor == 1) %>% dplyr::select(`120`, apache)
+b <- filter(gi_120, high_chlor == 0) %>% dplyr::select(`120`, apache)
+
+t.test(a$`120`, b$`120`) 
+```
+
+p = 0.0005  (without apache as covariate)  
+ mean of x   mean of y   
+ 0.01615044 -0.11369873   
+ 
+```{r}
+lm(`120` ~ high_chlor * apache, data = gi_120) %>% summary()
+
+ggplot(surg_creat, aes(x = time, y = delta_creat, group = high_chlor, colour = high_chlor) ) + 
+  geom_smooth(span = 0.5, size = 0.8, alpha = 0.6) + geom_point() +
+  theme_bw() + 
+  labs(x = 'Hours Post ICU Admission', y = 'Mean Change in Creatinine (mg/dl)') + 
+  scale_colour_manual(values = c('blue3', 'black'), labels = c("Cl < 110 mmol/L", "Cl ≥ 110 mmol/L")) +
+  theme(legend.title = element_blank(), legend.position = c(0.2, 0.2)) +
+  scale_x_continuous(limits = c(0,125), breaks = seq(0,120, 12), expand = c(0,0)) + annotate("text", x =110 , y = -0.04, label = 'p < 0.0001')
+```
+ 
+ Call:  
+lm (formula = `120` ~ high_chlor * apache, data = gi_120)  
+  
+Residuals:  
+    Min      1Q  Median      3Q     Max   
+-4.5373 -0.1484 -0.0011  0.1538  2.8490   
+  
+Coefficients:  
+                    Estimate Std. Error t value  Pr(>|t|)      
+(Intercept)        0.1173809  0.0754445   1.556   0.12014      
+high_chlor        -0.2727273  0.1086487  -2.510   0.01226 *    
+apache            -0.0030524  0.0009343  -3.267   0.00113 **   
+high_chlor:apache  0.0050948  0.0012807   3.978 0.0000758 ***  
+
+
+## Revisit sepsis
+```{r}
+sepsis_120 <-  d %>% dplyr::select(patientunitstayid, `120`) %>% 
+  left_join(sepsis_patients2, by = "patientunitstayid") %>% 
+  filter(sepsis== 1) %>% 
+  left_join( (emma_cohort2 %>%  dplyr::select(patientunitstayid, apache)), by = 'patientunitstayid' ) %>% 
+  filter(!is.na(apache)) %>% 
+  left_join( (dplyr::select(start_chloride, patientunitstayid, high_chlor)), by = 'patientunitstayid') %>% filter(!is.na(high_chlor))
+# n = 7673
+
+a <- filter(sepsis_120, high_chlor == 1) %>% dplyr::select(`120`, apache)
+b <- filter(sepsis_120, high_chlor == 0) %>% dplyr::select(`120`, apache)
+
+t.test(a$`120`, b$`120`) 
+
+```
+p-value = 0.8384 (without apache as covariate)
+
+```{r}
+lm(`120` ~ high_chlor * apache, data = sepsis_120) %>% summary()
+
+ggplot(septic_creat, aes(x = time, y = delta_creat, group = high_chlor, colour = high_chlor) ) + 
+  geom_smooth(span = 0.5, size = 0.8, alpha = 0.6) + geom_point() +
+  theme_bw() + 
+  labs(x = 'Hours Post ICU Admission', y = 'Mean Change in Creatinine (mg/dl)') + 
+  scale_colour_manual(values = c('blue3', 'black'), labels = c("Cl < 110 mmol/L", "Cl ≥ 110 mmol/L")) +
+  theme(legend.title = element_blank(), legend.position = c(0.2, 0.2)) +
+  scale_x_continuous(limits = c(0,125), breaks = seq(0,120, 12), expand = c(0,0)) + annotate("text", x =110 , y = -0.04, label = 'p < 0.0001')
+```
+
+Call:  
+lm(formula = `120` ~ high_chlor * apache, data = sepsis_120)  
+
+Residuals:  
+    Min      1Q  Median      3Q     Max   
+-5.8168 -0.1581  0.1092  0.2713  4.7191   
+
+Coefficients:  
+                    Estimate Std. Error t value  Pr(>|t|)      
+(Intercept)       -0.1369224  0.0320937  -4.266 0.0000201 ***  
+high_chlor        -0.2093437  0.0545059  -3.841  0.000124 ***  
+apache            -0.0006568  0.0003671  -1.789  0.073632 .    
+high_chlor:apache  0.0024358  0.0005944   4.098 0.0000421 ***  
+
+## Revisit trauma
+```{r}
+trauma_120 <-  d %>% dplyr::select(patientunitstayid, `120`) %>% 
+  left_join(trauma_patients2, by = "patientunitstayid") %>% 
+  filter(trauma == 1) %>% 
+  left_join( (emma_cohort2 %>%  dplyr::select(patientunitstayid, apache)), by = 'patientunitstayid' ) %>% 
+  filter(!is.na(apache)) %>% 
+  left_join( (dplyr::select(start_chloride, patientunitstayid, high_chlor)), by = 'patientunitstayid') %>% filter(!is.na(high_chlor))
+# n = 1,794
+
+a <- filter(trauma_120, high_chlor == 1) %>% dplyr::select(`120`, apache)
+b <- filter(trauma_120, high_chlor == 0) %>% dplyr::select(`120`, apache)
+
+t.test(a$`120`, b$`120`) 
+
+```
+p = 0.01973 (without apache as covariate)
+```{r}
+
+lm(`120` ~ high_chlor * apache, data = trauma_120) %>% summary()
+
+ggplot(trauma_creat, aes(x = time, y = delta_creat, group = high_chlor, colour = high_chlor) ) + 
+  geom_smooth(span = 0.5, size = 0.8, alpha = 0.6) + geom_point() +
+  theme_bw() + 
+  labs(x = 'Hours Post ICU Admission', y = 'Mean Change in Creatinine (mg/dl)') + 
+  scale_colour_manual(values = c('blue3', 'black'), labels = c("Cl < 110 mmol/L", "Cl ≥ 110 mmol/L")) +
+  theme(legend.title = element_blank(), legend.position = c(0.2, 0.2)) +
+  scale_x_continuous(limits = c(0,125), breaks = seq(0,120, 12), expand = c(0,0)) + annotate("text", x =110 , y = -0.04, label = 'p < 0.0001')
+```
+
+Call:  
+lm(formula = `120` ~ high_chlor * apache, data = trauma_120)  
+  
+Residuals:  
+    Min      1Q  Median      3Q     Max   
+-4.9636 -0.1083  0.0111  0.1095  3.1622   
+
+Coefficients: 
+                    Estimate Std. Error t value     Pr(>|t|)    
+(Intercept)       -0.0655357  0.0352777  -1.858       0.0634 .    
+high_chlor        -0.2443370  0.0532405  -4.589 0.0000047563 ***  
+apache            -0.0006373  0.0004793  -1.330       0.1838      
+high_chlor:apache  0.0038261  0.0006770   5.652 0.0000000184 ***  
+
+
